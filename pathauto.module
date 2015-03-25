@@ -375,6 +375,13 @@ function pathauto_action_info() {
     'label' => t('Update node alias'),
     'configurable' => FALSE,
   );
+  if (module_exists('entity_translation') && entity_translation_enabled('node')) {
+    $info['pathauto_node_update_entity_translation_action'] = array(
+      'type' => 'node',
+      'label' => t('Update node alias (with entity translation support)'),
+      'configurable' => TRUE,
+    );
+  }
   $info['pathauto_taxonomy_term_update_action'] = array(
     'type' => 'taxonomy_term',
     'label' => t('Update taxonomy term alias'),
@@ -562,6 +569,57 @@ function pathauto_node_update_alias_multiple(array $nids, $op, array $options = 
  */
 function pathauto_node_update_action($node, $context = array()) {
   pathauto_node_update_alias($node, 'bulkupdate', array('message' => TRUE));
+}
+
+/**
+ * Configuration form callback for the update_entity_translation action.
+ *
+ * @see pathauto_node_update_entity_translation_action().
+ */
+function pathauto_node_update_entity_translation_action_form($context) {
+  $form = array();
+  $languages = array();
+  foreach (language_list() as $langcode => $language) {
+    $languages[$langcode] = $language->name;
+  }
+  $form['languages'] = array(
+    '#title' => t('Please select languages to update aliases'),
+    '#type' => 'checkboxes',
+    '#description' => t('If nothing is selected, all languages will be updated.
+<br />Please note that aliases will be updated only if node has translations to these languages. So, for example, if you have German and French languages and you have selected them both, but node is only translated to German language, the French alias will not be updated.'),
+    '#options' => $languages,
+  );
+  return $form;
+}
+
+/**
+ * Configuration form submit callback for the update_entity_translation action.
+ *
+ * @see pathauto_node_update_entity_translation_action().
+ */
+function pathauto_node_update_entity_translation_action_submit($form, $form_state) {
+  return array('langcodes' => array_filter($form_state['values']['languages']));
+}
+
+/**
+ * The update_entity_translation action.
+ */
+function pathauto_node_update_entity_translation_action($node, $context = array()) {
+  if (!module_invoke('entity_translation', 'enabled', 'node', $node)) {
+    // Fallback to the default behavior.
+    pathauto_node_update_action($node, $context);
+  }
+  $all_langcodes = drupal_map_assoc(array_keys(language_list()));
+  $selected_langcodes = empty($context['langcodes'])
+    ? $all_langcodes
+    : array_intersect_key($all_langcodes, $context['langcodes']);
+  $translation_handler = entity_translation_get_handler('node', $node);
+  $translations = $translation_handler->getTranslations();
+  $node_langcodes = drupal_map_assoc(array_keys($translations->data));
+  $langcodes = array_intersect_key($selected_langcodes, $node_langcodes);
+  foreach ($langcodes as $langcode) {
+    pathauto_node_update_alias($node, 'bulkupdate', array('message' => TRUE, 'language' => $langcode));
+  }
 }
 
 /**
